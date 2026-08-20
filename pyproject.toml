@@ -1,0 +1,28 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "proofofseed"
+version = "0.1.0"
+description = "Create and verify zero-knowledge proofs of seed for software wallets."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "LGPL-3.0-or-later" }
+authors = [{ name = "Stefano Gogioso" }]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security :: Cryptography",
+]
+
+[tool.maturin]
+python-source = "python"
+module-name = "proofofseed._proofofseed"
+features = ["pyo3/extension-module"]
+
+[tool.mypy]
+strict = true
+
+[tool.black]
+line-length = 88

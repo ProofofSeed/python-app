@@ -1,0 +1,32 @@
+[package]
+name = "proofofseed-python"
+version = "0.1.0"
+edition = "2024"
+license = "LGPL-3.0-or-later"
+description = "Python bindings for the ProofofSeed prover/verifier (proofofseed-host), built with Maturin/PyO3."
+
+[lib]
+name = "_proofofseed"
+crate-type = ["cdylib"]
+
+[dependencies]
+proofofseed-circuits = { version = "0.1.0" }
+proofofseed-host = { version = "0.1.0" }
+# Keccak-256 (the suite hash) for the sidecar digests, so Python needs no
+# separate Keccak implementation.
+zkboo = { version = "0.1.0", default-features = false, features = ["u32", "u64", "keccak"] }
+pyo3 = { version = "0.26", features = ["extension-module", "abi3-py39"] }
+
+[patch.crates-io]
+zkboo = { path = "../../zkboo/zkboo" }
+zkboo-sha2 = { path = "../../zkboo/zkboo-sha2" }
+zkboo-hmac = { path = "../../zkboo/zkboo-hmac" }
+zkboo-modular = { path = "../../zkboo/zkboo-modular" }
+zkboo-ecc = { path = "../../zkboo/zkboo-ecc" }
+zkboo-keccak = { path = "../../zkboo/zkboo-keccak" }
+zkboo-ripemd160 = { path = "../../zkboo/zkboo-ripemd160" }
+zkboo-bip32 = { path = "../../zkboo/zkboo-bip32" }
+zkboo-profiling = { path = "../../zkboo/zkboo-profiling" }
+zkboo-circuit-hash = { path = "../../zkboo/zkboo-circuit-hash" }
+proofofseed-circuits = { path = "../proofofseed-core/circuits" }
+proofofseed-host = { path = "../proofofseed-core/host" }

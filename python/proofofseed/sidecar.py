@@ -1,0 +1,146 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+"""The proof sidecar: JSON metadata written alongside a proof file, byte-format
+compatible with the ``proofofseed`` CLI's sidecar (``proofofseed-sidecar/1``) so
+the two tools can verify and assemble each other's proofs.
+
+Metadata only: verification never trusts the sidecar for soundness. For the
+statements whose public output is itself key material, only ``output_keccak256``
+is stored; the genuinely public outputs are stored plainly in ``output``.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from . import _proofofseed as _rust
+
+FORMAT: str = _rust.SIDECAR_FORMAT
+
+
+@dataclass(frozen=True, slots=True)
+class Versions:
+    """The tool versions a proof was produced with; ranged proofs must be
+    assembled from one build (see the deterministic-entropy note)."""
+
+    cli: str
+    deterministic_entropy_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class Sidecar:
+    """A proof file's metadata record."""
+
+    statement: str
+    family: str
+    num_iters: int
+    rounds: int
+    path: str | None
+    index: str | None
+    chain_code: str | None
+    binding: str
+    range: tuple[int, int] | None
+    entropy_mode: str
+    output: str | None
+    output_keccak256: str
+    stream_bytes: int
+    stream_keccak256: str
+    versions: Versions
+
+    @staticmethod
+    def _sidecar_path(proof: Path) -> Path:
+        return proof.with_name(proof.name + ".json")
+
+    def to_json(self) -> str:
+        record: dict[str, Any] = {
+            "format": FORMAT,
+            "statement": self.statement,
+            "family": self.family,
+            "num_iters": self.num_iters,
+            "rounds": self.rounds,
+            "path": self.path,
+            "index": self.index,
+            "chain_code": self.chain_code,
+            "binding": self.binding,
+            "range": list(self.range) if self.range is not None else None,
+            "entropy_mode": self.entropy_mode,
+            "output": self.output,
+            "output_keccak256": self.output_keccak256,
+            "stream_bytes": self.stream_bytes,
+            "stream_keccak256": self.stream_keccak256,
+            "versions": {
+                "cli": self.versions.cli,
+                "deterministic_entropy_version": (
+                    self.versions.deterministic_entropy_version
+                ),
+            },
+        }
+        return json.dumps(record, indent=2)
+
+    def write(self, proof: Path) -> None:
+        path = self._sidecar_path(proof)
+        path.write_text(self.to_json() + "\n")
+        path.chmod(0o600)
+
+    @classmethod
+    def read(cls, proof: Path) -> Sidecar:
+        path = cls._sidecar_path(proof)
+        record = json.loads(path.read_text())
+        if record.get("format") != FORMAT:
+            raise ValueError(
+                f"sidecar {path} has format {record.get('format')!r}, expected {FORMAT!r}"
+            )
+        num_iters = int(record["num_iters"])
+        if not 1 <= num_iters <= _rust.MAX_RESPONSES:
+            raise ValueError(
+                f"sidecar {path} declares {num_iters} responses, outside 1..={_rust.MAX_RESPONSES}"
+            )
+        rng = record["range"]
+        range_: tuple[int, int] | None = (int(rng[0]), int(rng[1])) if rng else None
+        if range_ is not None:
+            start, end = range_
+            if not start < end <= num_iters:
+                raise ValueError(
+                    f"sidecar {path} has range {start}..{end} outside its {num_iters} responses"
+                )
+        versions = record["versions"]
+        return cls(
+            statement=str(record["statement"]),
+            family=str(record["family"]),
+            num_iters=num_iters,
+            rounds=int(record["rounds"]),
+            path=record["path"],
+            index=record["index"],
+            chain_code=record["chain_code"],
+            binding=str(record["binding"]),
+            range=range_,
+            entropy_mode=str(record["entropy_mode"]),
+            output=record["output"],
+            output_keccak256=str(record["output_keccak256"]),
+            stream_bytes=int(record["stream_bytes"]),
+            stream_keccak256=str(record["stream_keccak256"]),
+            versions=Versions(
+                cli=str(versions["cli"]),
+                deterministic_entropy_version=int(
+                    versions["deterministic_entropy_version"]
+                ),
+            ),
+        )
+
+    def assembly_key(self) -> tuple[Any, ...]:
+        """The fields that must agree across the ranges of one proof."""
+        return (
+            self.statement,
+            self.family,
+            self.num_iters,
+            self.rounds,
+            self.path,
+            self.index,
+            self.chain_code,
+            self.binding,
+            self.output_keccak256,
+            self.versions,
+        )
