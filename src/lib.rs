@@ -132,17 +132,19 @@ fn prove_to_file(
         None => fresh_entropy().map_err(err)?,
     };
     let (start, end) = range.map_or((0, num_iters), |(a, b)| (a as usize, b as usize));
-    let file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(out_path)
-        .map_err(|e| err(format!("cannot create {out_path}: {e} (refusing to overwrite)")))?;
+    // Create the proof mode 0600 at open time (O_EXCL refuses to overwrite or
+    // follow a symlink; setting the mode on the OpenOptions avoids the brief
+    // world-readable window a create-then-chmod would leave).
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(out_path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| err(format!("cannot set permissions on {out_path}: {e}")))?;
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
     }
+    let file = options
+        .open(out_path)
+        .map_err(|e| err(format!("cannot create {out_path}: {e} (refusing to overwrite)")))?;
     let mut writer = {
         use zkboo::crypto::Hasher;
         HashingWriter {
@@ -174,8 +176,10 @@ fn prove_to_file(
     meta.set_item("binding", hex(&req.binding))?;
     meta.set_item("range", range)?;
     meta.set_item("entropy_mode", if range.is_some() { "deterministic" } else { "trng" })?;
+    // Only the commitment crosses the FFI for a secret-output statement; the raw
+    // output (which is key material there) never enters Python-managed memory.
     meta.set_item("output_is_secret", stmt.output_is_secret())?;
-    meta.set_item("output", hex(&output))?;
+    meta.set_item("output", (!stmt.output_is_secret()).then(|| hex(&output)))?;
     meta.set_item("output_keccak256", hex(&keccak(&output)))?;
     meta.set_item("stream_bytes", written)?;
     meta.set_item("stream_keccak256", hex(&stream_keccak))?;

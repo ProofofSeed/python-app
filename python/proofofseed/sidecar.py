@@ -81,9 +81,15 @@ class Sidecar:
         return json.dumps(record, indent=2)
 
     def write(self, proof: Path) -> None:
+        # 0600 and O_EXCL like the proof file: the sidecar carries the anchored
+        # parent chain code (an extended-key component), so it must not be
+        # world-readable, overwrite a victim file, or follow a planted symlink.
+        # The proof is always created fresh, so its sidecar never overwrites.
+        from ._fs import create_new_0600
+
         path = self._sidecar_path(proof)
-        path.write_text(self.to_json() + "\n")
-        path.chmod(0o600)
+        with create_new_0600(path) as f:
+            f.write((self.to_json() + "\n").encode("utf-8"))
 
     @classmethod
     def read(cls, proof: Path) -> Sidecar:
@@ -99,6 +105,8 @@ class Sidecar:
                 f"sidecar {path} declares {num_iters} responses, outside 1..={_rust.MAX_RESPONSES}"
             )
         rng = record["range"]
+        if rng is not None and len(rng) != 2:
+            raise ValueError(f"sidecar {path} has a malformed range {rng!r}")
         range_: tuple[int, int] | None = (int(rng[0]), int(rng[1])) if rng else None
         if range_ is not None:
             start, end = range_
@@ -131,7 +139,10 @@ class Sidecar:
         )
 
     def assembly_key(self) -> tuple[Any, ...]:
-        """The fields that must agree across the ranges of one proof."""
+        """The fields that must agree across the ranges of one proof. The version
+        component is the deterministic-entropy version — the only version that
+        governs whether two ranges share prover entropy — not the tool's own
+        version string, so a CLI range and a Python range assemble together."""
         return (
             self.statement,
             self.family,
@@ -142,5 +153,5 @@ class Sidecar:
             self.chain_code,
             self.binding,
             self.output_keccak256,
-            self.versions,
+            self.versions.deterministic_entropy_version,
         )

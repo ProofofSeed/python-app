@@ -162,23 +162,89 @@ def test_python_proof_is_byte_identical_to_the_cli(tmp_path: Path) -> None:
         capture_output=True,
     )
     assert py_proof.read_bytes() == cli_proof.read_bytes()
-    # And the CLI verifies the Python-produced proof (cross-tool interop).
+
+
+def _cli(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(_CLI), *args], capture_output=True, text=True, check=True
+    )
+
+
+@pytest.mark.skipif(not _CLI.exists(), reason="the proofofseed CLI is not built")
+def test_cross_tool_assemble_both_directions(tmp_path: Path) -> None:
+    # The CLI produces two ranges, Python assembles and verifies them; then Python
+    # produces two ranges and the CLI assembles and verifies them. Exercises the
+    # shared sidecar format and the tool-agnostic assembly key in both directions.
+    seed = tmp_path / "mnemonic.txt"
+    seed.write_text(MNEMONIC)
     d = pos.derive("hardened-child", mnemonic=MNEMONIC, path="m/84'/0'", index="0'")
     out_hex = tmp_path / "out.hex"
     out_hex.write_text(d.output.hex())
-    result = subprocess.run(
+
+    def cli_prove(rng: str, out: Path) -> None:
+        _cli(
+            [
+                "prove",
+                "--statement",
+                "hardened-child",
+                "--path",
+                "m/84'/0'",
+                "--index",
+                "0'",
+                "--binding",
+                "aabbcc",
+                "-n",
+                "6",
+                "--range",
+                rng,
+                "--seed-file",
+                str(seed),
+                "-o",
+                str(out),
+            ]
+        )
+
+    # CLI ranges -> Python assemble + verify.
+    ca, cb = tmp_path / "ca.pos", tmp_path / "cb.pos"
+    cli_prove("0..3", ca)
+    cli_prove("3..6", cb)
+    full_py = tmp_path / "full_py.pos"
+    pos.assemble([ca, cb], out_path=full_py, expected_output=d.output, min_responses=6)
+    assert pos.verify(full_py, expected_output=d.output, min_responses=6)
+
+    # Python ranges -> CLI assemble + verify.
+    pa, pb = tmp_path / "pa.pos", tmp_path / "pb.pos"
+    common = dict(
+        mnemonic=MNEMONIC,
+        path="m/84'/0'",
+        index="0'",
+        binding=b"\xaa\xbb\xcc",
+        responses=6,
+    )
+    pos.prove("hardened-child", out_path=pa, range=(0, 3), **common)  # type: ignore[arg-type]
+    pos.prove("hardened-child", out_path=pb, range=(3, 6), **common)  # type: ignore[arg-type]
+    full_cli = tmp_path / "full_cli.pos"
+    _cli(
         [
-            str(_CLI),
-            "verify",
-            "--proof",
-            str(py_proof),
+            "assemble",
+            str(pa),
+            str(pb),
+            "-o",
+            str(full_cli),
             "--expected-output-file",
             str(out_hex),
             "--min-responses",
             "6",
-        ],
-        capture_output=True,
-        text=True,
+        ]
     )
-    assert result.returncode != 0, "a range file must be refused as a complete proof"
-    assert "range, not a complete proof" in result.stderr
+    _cli(
+        [
+            "verify",
+            "--proof",
+            str(full_cli),
+            "--expected-output-file",
+            str(out_hex),
+            "--min-responses",
+            "6",
+        ]
+    )

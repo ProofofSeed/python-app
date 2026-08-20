@@ -156,6 +156,10 @@ def prove(
     deterministic entropy so slices from separate runs assemble."""
     if not 1 <= responses <= MAX_RESPONSES:
         raise ValueError(f"responses must be in 1..={MAX_RESPONSES}")
+    if len(binding) > 255:
+        raise ValueError(
+            f"binding is {len(binding)} bytes; the wire format caps it at 255"
+        )
     if range is not None:
         start, end = range
         if not 0 <= start < end <= responses:
@@ -264,6 +268,8 @@ def assemble(
     """Assemble range-proof files into one complete proof: check they share one
     request and version set, that their ranges exactly partition the response
     sequence, verify the assembled proof, then write it with its own sidecar."""
+    if not inputs:
+        raise ValueError("assemble needs at least one range-proof file")
     paths = [Path(p) for p in inputs]
     parts: list[tuple[Path, Sidecar]] = []
     for p in paths:
@@ -323,9 +329,10 @@ def assemble(
     if not ok:
         raise ValueError("the assembled proof does not verify — nothing written")
     out = Path(out_path)
-    with open(out, "xb") as f:
+    from ._fs import create_new_0600
+
+    with create_new_0600(out) as f:
         f.write(assembled)
-    out.chmod(0o600)
     sidecar = Sidecar(
         statement=reference.statement,
         family=reference.family,
