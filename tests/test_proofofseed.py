@@ -248,3 +248,48 @@ def test_cross_tool_assemble_both_directions(tmp_path: Path) -> None:
             "6",
         ]
     )
+
+
+def test_seed_statements_carry_their_witness_shape_and_verify(tmp_path: Path) -> None:
+    """The seed statements allocate one circuit input per witness byte, so their
+    witness length — and, for BIP-39, the PBKDF2 salt — are public parameters the
+    verifier needs to rebuild the circuit. A sidecar that omits them leaves the
+    verifier rebuilding the canonical test-vector circuit, which rejects every real
+    proof: that is what these statements used to do."""
+    for statement, kwargs, want_salt in (
+        ("master-key", {}, False),
+        ("bip39-seed", {"rounds": 2}, True),
+    ):
+        proof = tmp_path / f"{statement}.pos"
+        sidecar = pos.prove(
+            statement=statement,
+            mnemonic=MNEMONIC,
+            responses=8,
+            out_path=proof,
+            binding=b"\xaa\xbb",
+            **kwargs,
+        )
+        assert sidecar.witness_len is not None and sidecar.witness_len > 0
+        assert (sidecar.salt is not None) == want_salt
+        secret = pos.derive(statement=statement, mnemonic=MNEMONIC, **kwargs)
+        assert pos.verify(proof, expected_output=secret.output, min_responses=8)
+
+
+def test_a_seed_proof_does_not_verify_without_its_shape(tmp_path: Path) -> None:
+    """The negative that keeps the field from being dropped again: strip the shape
+    from the sidecar and the same proof must stop verifying."""
+    proof = tmp_path / "mk.pos"
+    pos.prove(
+        statement="master-key",
+        mnemonic=MNEMONIC,
+        responses=8,
+        out_path=proof,
+        binding=b"\xaa\xbb",
+    )
+    secret = pos.derive(statement="master-key", mnemonic=MNEMONIC)
+    assert pos.verify(proof, expected_output=secret.output, min_responses=8)
+
+    sidecar_path = proof.with_name(proof.name + ".json")
+    record = sidecar_path.read_text().replace('"witness_len": 64', '"witness_len": null')
+    sidecar_path.write_text(record)
+    assert not pos.verify(proof, expected_output=secret.output, min_responses=8)

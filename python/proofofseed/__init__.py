@@ -195,6 +195,8 @@ def prove(
         output_keccak256=meta["output_keccak256"],
         stream_bytes=meta["stream_bytes"],
         stream_keccak256=meta["stream_keccak256"],
+        witness_len=meta["witness_len"],
+        salt=meta["salt"],
         versions=Versions(
             cli=__version__,
             deterministic_entropy_version=meta["deterministic_entropy_version"],
@@ -255,6 +257,8 @@ def verify(
         sidecar.rounds,
         bytes.fromhex(sidecar.chain_code) if sidecar.chain_code else None,
         parse_component(sidecar.index) if sidecar.index else None,
+        sidecar.witness_len,
+        bytes.fromhex(sidecar.salt) if sidecar.salt else None,
     )
 
 

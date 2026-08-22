@@ -49,6 +49,14 @@ class Sidecar:
     stream_bytes: int
     stream_keccak256: str
     versions: Versions
+    #: Witness byte length, for the seed statements whose circuit allocates one input
+    #: per witness byte. A verifier needs it to rebuild the circuit; without it the
+    #: verifier falls back to the canonical test vector and the proof is rejected.
+    witness_len: int | None = None
+    #: The BIP-39 PBKDF2 salt as hex — ``"mnemonic"`` followed by the passphrase, and a
+    #: public parameter of that statement's circuit. It therefore discloses the
+    #: passphrase to anyone holding the sidecar.
+    salt: str | None = None
 
     @staticmethod
     def _sidecar_path(proof: Path) -> Path:
@@ -71,6 +79,8 @@ class Sidecar:
             "output_keccak256": self.output_keccak256,
             "stream_bytes": self.stream_bytes,
             "stream_keccak256": self.stream_keccak256,
+            "witness_len": self.witness_len,
+            "salt": self.salt,
             "versions": {
                 "cli": self.versions.cli,
                 "deterministic_entropy_version": (
@@ -130,6 +140,10 @@ class Sidecar:
             output_keccak256=str(record["output_keccak256"]),
             stream_bytes=int(record["stream_bytes"]),
             stream_keccak256=str(record["stream_keccak256"]),
+            witness_len=(
+                int(record["witness_len"]) if record.get("witness_len") is not None else None
+            ),
+            salt=record.get("salt"),
             versions=Versions(
                 cli=str(versions["cli"]),
                 deterministic_entropy_version=int(
@@ -153,5 +167,7 @@ class Sidecar:
             self.chain_code,
             self.binding,
             self.output_keccak256,
+            self.witness_len,
+            self.salt,
             self.versions.deterministic_entropy_version,
         )
