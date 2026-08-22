@@ -252,11 +252,14 @@ def test_cross_tool_assemble_both_directions(tmp_path: Path) -> None:
 
 def test_seed_statements_carry_their_witness_shape_and_verify(tmp_path: Path) -> None:
     """The seed statements allocate one circuit input per witness byte, so their
-    witness length — and, for BIP-39, the PBKDF2 salt — are public parameters the
+    witness length — and, for BIP-39, the salt's length — are public parameters the
     verifier needs to rebuild the circuit. A sidecar that omits them leaves the
     verifier rebuilding the canonical test-vector circuit, which rejects every real
-    proof: that is what these statements used to do."""
-    for statement, kwargs, want_salt in (
+    proof: that is what these statements used to do.
+
+    The salt's *bytes* are witness, so the sidecar carries a count and never the
+    passphrase."""
+    for statement, kwargs, want_salt_len in (
         ("master-key", {}, False),
         ("bip39-seed", {"rounds": 2}, True),
     ):
@@ -270,7 +273,9 @@ def test_seed_statements_carry_their_witness_shape_and_verify(tmp_path: Path) ->
             **kwargs,
         )
         assert sidecar.witness_len is not None and sidecar.witness_len > 0
-        assert (sidecar.salt is not None) == want_salt
+        assert (sidecar.salt_len is not None) == want_salt_len
+        # The passphrase must not be recoverable from the sidecar at all.
+        assert "salt\"" not in sidecar.to_json()
         secret = pos.derive(statement=statement, mnemonic=MNEMONIC, **kwargs)
         assert pos.verify(proof, expected_output=secret.output, min_responses=8)
 
