@@ -183,6 +183,18 @@ fn prove_to_file(
     meta.set_item("output_keccak256", hex(&keccak(&output)))?;
     meta.set_item("stream_bytes", written)?;
     meta.set_item("stream_keccak256", hex(&stream_keccak))?;
+    // The seed statements' circuits allocate one input per witness byte, so the shape
+    // has to reach the verifier or it rebuilds the canonical test-vector circuit and
+    // rejects the proof. Two lengths and nothing else: the salt's bytes are witness, so
+    // a BIP-39 passphrase never leaves the prover.
+    meta.set_item(
+        "witness_len",
+        resolved.witness_shape.as_ref().map(|(n, _)| *n),
+    )?;
+    meta.set_item(
+        "salt_len",
+        resolved.witness_shape.as_ref().and_then(|(_, salt_len)| *salt_len),
+    )?;
     meta.set_item("deterministic_entropy_version", DETERMINISTIC_ENTROPY_VERSION)?;
     Ok(meta.into())
 }
@@ -224,7 +236,7 @@ fn derive_output(
 /// Verify a streamed proof against the expected public output.
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-#[pyo3(signature = (statement, family, output, stream, num_iters, binding, rounds, chain_code=None, index=None))]
+#[pyo3(signature = (statement, family, output, stream, num_iters, binding, rounds, chain_code=None, index=None, witness_len=None, salt_len=None))]
 fn verify(
     statement: &str,
     family: &str,
@@ -235,10 +247,12 @@ fn verify(
     rounds: usize,
     chain_code: Option<&[u8]>,
     index: Option<u32>,
+    witness_len: Option<usize>,
+    salt_len: Option<usize>,
 ) -> PyResult<bool> {
     let stmt = statement_of(statement)?;
     let fam = family_of(family)?;
-    Ok(proofofseed_host::verify(
+    Ok(proofofseed_host::verify_with_shape(
         stmt.id(),
         output,
         stream,
@@ -248,6 +262,8 @@ fn verify(
         chain_code,
         index,
         fam as u8,
+        witness_len,
+        salt_len,
     ))
 }
 

@@ -49,6 +49,15 @@ class Sidecar:
     stream_bytes: int
     stream_keccak256: str
     versions: Versions
+    #: Witness byte length, for the seed statements whose circuit allocates one input
+    #: per witness byte. A verifier needs it to rebuild the circuit; without it the
+    #: verifier falls back to the canonical test vector and the proof is rejected.
+    witness_len: int | None = None
+    #: The byte length of the BIP-39 PBKDF2 salt (``"mnemonic"`` followed by the
+    #: passphrase). The length only: the salt's bytes are witness, so a verifier rebuilds
+    #: the circuit from the two lengths and never receives the passphrase. What it can
+    #: infer is how long one is, or that there is none (``salt_len == 8``).
+    salt_len: int | None = None
 
     @staticmethod
     def _sidecar_path(proof: Path) -> Path:
@@ -71,6 +80,8 @@ class Sidecar:
             "output_keccak256": self.output_keccak256,
             "stream_bytes": self.stream_bytes,
             "stream_keccak256": self.stream_keccak256,
+            "witness_len": self.witness_len,
+            "salt_len": self.salt_len,
             "versions": {
                 "cli": self.versions.cli,
                 "deterministic_entropy_version": (
@@ -130,6 +141,12 @@ class Sidecar:
             output_keccak256=str(record["output_keccak256"]),
             stream_bytes=int(record["stream_bytes"]),
             stream_keccak256=str(record["stream_keccak256"]),
+            witness_len=(
+                int(record["witness_len"]) if record.get("witness_len") is not None else None
+            ),
+            salt_len=(
+                int(record["salt_len"]) if record.get("salt_len") is not None else None
+            ),
             versions=Versions(
                 cli=str(versions["cli"]),
                 deterministic_entropy_version=int(
@@ -153,5 +170,7 @@ class Sidecar:
             self.chain_code,
             self.binding,
             self.output_keccak256,
+            self.witness_len,
+            self.salt_len,
             self.versions.deterministic_entropy_version,
         )
