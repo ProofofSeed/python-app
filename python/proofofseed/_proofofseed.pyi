@@ -41,6 +41,8 @@ def verify(
     rounds: int,
     chain_code: bytes | None = ...,
     index: int | None = ...,
+    witness_len: int | None = ...,
+    salt_len: int | None = ...,
 ) -> bool: ...
 def profile(statement: str, family: str, rounds: int) -> dict[str, int]: ...
 def expected_output(
