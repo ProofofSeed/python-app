@@ -275,7 +275,7 @@ def test_seed_statements_carry_their_witness_shape_and_verify(tmp_path: Path) ->
         assert sidecar.witness_len is not None and sidecar.witness_len > 0
         assert (sidecar.salt_len is not None) == want_salt_len
         # The passphrase must not be recoverable from the sidecar at all.
-        assert "salt\"" not in sidecar.to_json()
+        assert 'salt"' not in sidecar.to_json()
         secret = pos.derive(statement=statement, mnemonic=MNEMONIC, **kwargs)
         assert pos.verify(proof, expected_output=secret.output, min_responses=8)
 
@@ -295,6 +295,8 @@ def test_a_seed_proof_does_not_verify_without_its_shape(tmp_path: Path) -> None:
     assert pos.verify(proof, expected_output=secret.output, min_responses=8)
 
     sidecar_path = proof.with_name(proof.name + ".json")
-    record = sidecar_path.read_text().replace('"witness_len": 64', '"witness_len": null')
+    record = sidecar_path.read_text().replace(
+        '"witness_len": 64', '"witness_len": null'
+    )
     sidecar_path.write_text(record)
     assert not pos.verify(proof, expected_output=secret.output, min_responses=8)

@@ -142,7 +142,9 @@ class Sidecar:
             stream_bytes=int(record["stream_bytes"]),
             stream_keccak256=str(record["stream_keccak256"]),
             witness_len=(
-                int(record["witness_len"]) if record.get("witness_len") is not None else None
+                int(record["witness_len"])
+                if record.get("witness_len") is not None
+                else None
             ),
             salt_len=(
                 int(record["salt_len"]) if record.get("salt_len") is not None else None
