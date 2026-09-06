@@ -44,7 +44,7 @@ fn hex(bytes: &[u8]) -> String {
 
 fn keccak(data: &[u8]) -> [u8; 32] {
     use zkboo::crypto::Hasher;
-    let mut h = zkboo::crypto::Keccak256Hasher::new();
+    let mut h = proofofseed_circuits::hasher::Keccak256Hasher::new();
     h.update(data);
     let mut out = [0u8; 32];
     h.finalize_into(&mut out);
@@ -55,7 +55,7 @@ fn keccak(data: &[u8]) -> [u8; 32] {
 /// stream's digest is computed as it streams, without a re-read).
 struct HashingWriter<W: std::io::Write> {
     inner: W,
-    hasher: zkboo::crypto::Keccak256Hasher,
+    hasher: proofofseed_circuits::hasher::Keccak256Hasher,
 }
 
 impl<W: std::io::Write> std::io::Write for HashingWriter<W> {
@@ -149,7 +149,7 @@ fn prove_to_file(
         use zkboo::crypto::Hasher;
         HashingWriter {
             inner: std::io::BufWriter::new(file),
-            hasher: zkboo::crypto::Keccak256Hasher::new(),
+            hasher: proofofseed_circuits::hasher::Keccak256Hasher::new(),
         }
     };
     let written = resolved
