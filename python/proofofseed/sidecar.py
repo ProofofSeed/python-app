@@ -1,35 +1,36 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-"""The proof sidecar: JSON metadata written alongside a proof file, byte-format
-compatible with the ``proofofseed`` CLI's sidecar (``proofofseed-sidecar/1``) so
-the two tools can verify and assemble each other's proofs.
-
-Metadata only: verification never trusts the sidecar for soundness. For the
-statements whose public output is itself key material, only ``output_keccak256``
-is stored; the genuinely public outputs are stored plainly in ``output``.
-"""
+"""The JSON metadata record written alongside a proof file."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, final
 
 from . import _proofofseed as _rust
+from ._fs import create_new_0600
 
 FORMAT: str = _rust.SIDECAR_FORMAT
 
 
+@final
 @dataclass(frozen=True, slots=True)
 class Versions:
-    """The tool versions a proof was produced with; ranged proofs must be
-    assembled from one build (see the deterministic-entropy note)."""
+    """The tool versions a proof was produced with."""
 
     cli: str
     deterministic_entropy_version: int
 
+    def __post_init__(self) -> None:
+        if not self.cli:
+            raise ValueError("cli version must not be empty")
+        if self.deterministic_entropy_version < 0:
+            raise ValueError("deterministic_entropy_version must not be negative")
 
+
+@final
 @dataclass(frozen=True, slots=True)
 class Sidecar:
     """A proof file's metadata record."""
@@ -49,21 +50,40 @@ class Sidecar:
     stream_bytes: int
     stream_keccak256: str
     versions: Versions
-    #: Witness byte length, for the seed statements whose circuit allocates one input
-    #: per witness byte. A verifier needs it to rebuild the circuit; without it the
-    #: verifier falls back to the canonical test vector and the proof is rejected.
+    #: The witness byte length, for the statements whose circuit allocates one input per
+    #: witness byte.
     witness_len: int | None = None
-    #: The byte length of the BIP-39 PBKDF2 salt (``"mnemonic"`` followed by the
-    #: passphrase). The length only: the salt's bytes are witness, so a verifier rebuilds
-    #: the circuit from the two lengths and never receives the passphrase. What it can
-    #: infer is how long one is, or that there is none (``salt_len == 8``).
+    #: The byte length of the BIP-39 PBKDF2 salt.
     salt_len: int | None = None
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.num_iters <= _rust.MAX_RESPONSES:
+            raise ValueError(
+                f"num_iters {self.num_iters} is outside 1..={_rust.MAX_RESPONSES}"
+            )
+        if self.rounds < 1:
+            raise ValueError(f"rounds must be positive, got {self.rounds}")
+        if self.entropy_mode not in ("deterministic", "trng"):
+            raise ValueError(f"unknown entropy mode {self.entropy_mode!r}")
+        if self.range is not None:
+            start, end = self.range
+            if not 0 <= start < end <= self.num_iters:
+                raise ValueError(
+                    f"range {start}..{end} is outside the {self.num_iters} responses"
+                )
+        if self.stream_bytes < 0:
+            raise ValueError("stream_bytes must not be negative")
+        if self.witness_len is not None and self.witness_len < 1:
+            raise ValueError("witness_len must be positive when present")
+        if self.salt_len is not None and self.salt_len < 8:
+            raise ValueError("salt_len must cover the eight-byte BIP-39 constant")
 
     @staticmethod
     def _sidecar_path(proof: Path) -> Path:
         return proof.with_name(proof.name + ".json")
 
     def to_json(self) -> str:
+        """Renders the record as the sidecar file's JSON text."""
         record: dict[str, Any] = {
             "format": FORMAT,
             "statement": self.statement,
@@ -92,50 +112,34 @@ class Sidecar:
         return json.dumps(record, indent=2)
 
     def write(self, proof: Path) -> None:
-        # 0600 and O_EXCL like the proof file: the sidecar carries the anchored
-        # parent chain code (an extended-key component), so it must not be
-        # world-readable, overwrite a victim file, or follow a planted symlink.
-        # The proof is always created fresh, so its sidecar never overwrites.
-        from ._fs import create_new_0600
-
+        """Writes the record beside a proof file, mode 0600 and refusing to overwrite."""
         path = self._sidecar_path(proof)
         with create_new_0600(path) as f:
             f.write((self.to_json() + "\n").encode("utf-8"))
 
     @classmethod
     def read(cls, proof: Path) -> Sidecar:
+        """Reads the record written beside a proof file."""
         path = cls._sidecar_path(proof)
         record = json.loads(path.read_text())
         if record.get("format") != FORMAT:
             raise ValueError(
                 f"sidecar {path} has format {record.get('format')!r}, expected {FORMAT!r}"
             )
-        num_iters = int(record["num_iters"])
-        if not 1 <= num_iters <= _rust.MAX_RESPONSES:
-            raise ValueError(
-                f"sidecar {path} declares {num_iters} responses, outside 1..={_rust.MAX_RESPONSES}"
-            )
         rng = record["range"]
         if rng is not None and len(rng) != 2:
             raise ValueError(f"sidecar {path} has a malformed range {rng!r}")
-        range_: tuple[int, int] | None = (int(rng[0]), int(rng[1])) if rng else None
-        if range_ is not None:
-            start, end = range_
-            if not start < end <= num_iters:
-                raise ValueError(
-                    f"sidecar {path} has range {start}..{end} outside its {num_iters} responses"
-                )
         versions = record["versions"]
         return cls(
             statement=str(record["statement"]),
             family=str(record["family"]),
-            num_iters=num_iters,
+            num_iters=int(record["num_iters"]),
             rounds=int(record["rounds"]),
             path=record["path"],
             index=record["index"],
             chain_code=record["chain_code"],
             binding=str(record["binding"]),
-            range=range_,
+            range=(int(rng[0]), int(rng[1])) if rng else None,
             entropy_mode=str(record["entropy_mode"]),
             output=record["output"],
             output_keccak256=str(record["output_keccak256"]),
@@ -158,10 +162,7 @@ class Sidecar:
         )
 
     def assembly_key(self) -> tuple[Any, ...]:
-        """The fields that must agree across the ranges of one proof. The version
-        component is the deterministic-entropy version — the only version that
-        governs whether two ranges share prover entropy — not the tool's own
-        version string, so a CLI range and a Python range assemble together."""
+        """The fields that must agree across the ranges of one proof."""
         return (
             self.statement,
             self.family,
