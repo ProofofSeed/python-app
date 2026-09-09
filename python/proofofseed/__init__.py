@@ -1,18 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-"""Create and verify zero-knowledge proofs of seed for software wallets.
-
-A typed wrapper over the shared ``proofofseed-host`` prover/verifier (the same
-library the ``proofofseed`` CLI and the Ledger app use), so proofs produced here
-are byte-identical to the CLI's and — for the derived-key statements — to a
-device holding the same seed. Proofs stream to disk at constant memory; ranges
-of one proof produced by separate runs assemble into one verifying proof.
-
-Security note: this library takes the raw mnemonic in process memory. Callers
-should treat it as they would a seed — prefer running on a trusted, ideally
-air-gapped host — and are responsible for sourcing it safely (this package does
-not read it from the command line or environment).
-"""
+"""Creates and verifies zero-knowledge proofs of seed for software wallets."""
 
 from __future__ import annotations
 
@@ -20,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import _proofofseed as _rust
+from ._fs import create_new_0600
 from .sidecar import Sidecar, Versions
 
 __version__ = "0.1.0"
@@ -41,8 +30,7 @@ _HARDENED = 0x8000_0000
 
 
 def parse_path(path: str) -> list[int]:
-    """Parse a BIP-32 path (``m/84'/0'``; ``'`` or ``h``/``H`` marks a hardened
-    component) into a list of u32 components with the hardened bit set."""
+    """Parses a BIP-32 path into a list of u32 components with the hardened bit set."""
     text = path.strip()
     for prefix in ("m/", "M/"):
         if text.startswith(prefix):
@@ -58,7 +46,7 @@ def parse_path(path: str) -> list[int]:
 
 
 def parse_component(component: str) -> int:
-    """Parse a single path component or child index (``0'``, ``0h``, ``0``)."""
+    """Parses a single path component or child index."""
     hardened = component.endswith(("'", "h", "H"))
     digits = component[:-1] if hardened else component
     try:
@@ -76,7 +64,7 @@ def _as_bytes(value: str | bytes) -> bytes:
 
 @dataclass(frozen=True, slots=True)
 class ProfileResult:
-    """Off-device size and memory numbers for a statement (no witness needed)."""
+    """Size and memory numbers for a statement, derived without a witness."""
 
     response_bytes: int
     prover_memory: int
@@ -88,7 +76,7 @@ class ProfileResult:
 
 @dataclass(frozen=True, slots=True)
 class DeriveResult:
-    """A statement's public output (and parent chain code, for child statements)."""
+    """A statement's public output, with the parent chain code for a child statement."""
 
     output: bytes
     chain_code: bytes | None
@@ -97,7 +85,7 @@ class DeriveResult:
 def profile(
     statement: str, *, family: str = "bip32-secp256k1", rounds: int = 2048
 ) -> ProfileResult:
-    """Proof size and prover/executor memory for ``statement`` — no witness."""
+    """Reports the proof size and the prover and executor memory for a statement."""
     d = _rust.profile(statement, family, rounds)
     return ProfileResult(
         response_bytes=d["response_bytes"],
@@ -116,9 +104,7 @@ def derive(
     index: str | int | None = None,
     rounds: int = 2048,
 ) -> DeriveResult:
-    """Derive ``statement``'s public output from the mnemonic, for the verifier to
-    pin. Does not prove anything; returns the raw output (secret for the
-    key-deriving statements — handle accordingly)."""
+    """Derives a statement's public output from the mnemonic, for the verifier to pin."""
     comps = parse_path(path) if isinstance(path, str) else path
     idx = parse_component(index) if isinstance(index, str) else index
     output_hex, chain_code_hex = _rust.derive_output(
@@ -150,10 +136,7 @@ def prove(
     binding: bytes = b"",
     range: tuple[int, int] | None = None,
 ) -> Sidecar:
-    """Create a proof, streaming it to ``out_path`` and writing the sidecar
-    alongside (``out_path`` + ``.json``). Returns the sidecar. A ``range`` proves
-    only that half-open slice of the ``responses``-response sequence, with
-    deterministic entropy so slices from separate runs assemble."""
+    """Creates a proof, streaming it to a file and writing its sidecar alongside."""
     if not 1 <= responses <= MAX_RESPONSES:
         raise ValueError(f"responses must be in 1..={MAX_RESPONSES}")
     if len(binding) > 255:
@@ -228,9 +211,7 @@ def verify(
     binding: bytes | None = None,
     min_responses: int = DEFAULT_RESPONSES,
 ) -> bool:
-    """Verify a proof file against its sidecar. Refuses a range file (assemble
-    first) and any proof carrying fewer than ``min_responses`` responses — the
-    soundness the verifier demands, not a number the sidecar can lower."""
+    """Verifies a proof file against its sidecar."""
     proof = Path(proof_path)
     sidecar = Sidecar.read(proof)
     if sidecar.range is not None:
@@ -269,9 +250,7 @@ def assemble(
     expected_output: bytes | None = None,
     min_responses: int = DEFAULT_RESPONSES,
 ) -> Sidecar:
-    """Assemble range-proof files into one complete proof: check they share one
-    request and version set, that their ranges exactly partition the response
-    sequence, verify the assembled proof, then write it with its own sidecar."""
+    """Assembles range-proof files into one complete proof."""
     if not inputs:
         raise ValueError("assemble needs at least one range-proof file")
     paths = [Path(p) for p in inputs]
@@ -333,8 +312,6 @@ def assemble(
     if not ok:
         raise ValueError("the assembled proof does not verify — nothing written")
     out = Path(out_path)
-    from ._fs import create_new_0600
-
     with create_new_0600(out) as f:
         f.write(assembled)
     sidecar = Sidecar(

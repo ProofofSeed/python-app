@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
-//! PyO3 bindings over `proofofseed-host`: the low-level prove / verify / derive /
-//! profile primitives the Python package (`proofofseed`) wraps in a typed API.
-//! Every proof-producing path goes through the shared `statement::resolve`, so
-//! Python proofs are byte-identical to the CLI's and to a device's for the same
-//! request. Secrets stay in Rust: the mnemonic and passphrase arrive as bytes,
-//! are used for the derivation, and the derived key material is zeroized by the
-//! shared library.
+//! PyO3 bindings over `proofofseed-host`, wrapped in a typed API by the `proofofseed`
+//! Python package.
 
 use std::io::Write as _;
 
@@ -51,8 +46,7 @@ fn keccak(data: &[u8]) -> [u8; 32] {
     out
 }
 
-/// A writer that Keccak-256-hashes everything written through it (so the proof
-/// stream's digest is computed as it streams, without a re-read).
+/// A writer that Keccak-256-hashes everything written through it.
 struct HashingWriter<W: std::io::Write> {
     inner: W,
     hasher: proofofseed_circuits::hasher::Keccak256Hasher,
@@ -90,10 +84,8 @@ fn format_index(index: u32) -> String {
     s
 }
 
-/// Resolve a request from a mnemonic and stream the proof to `out_path`,
-/// returning a metadata dict the Python layer turns into a sidecar. `range` is
-/// `(start, end)` or `None`; `path` is a list of u32 components (hardened bit
-/// set) or `None`; `index` is a u32 or `None`.
+/// Resolves a request from a mnemonic and streams the proof to a file, returning the
+/// metadata the Python layer turns into a sidecar.
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
 #[pyo3(signature = (out_path, statement, family, num_iters, rounds, binding, mnemonic, passphrase, path=None, index=None, range=None))]
@@ -132,9 +124,6 @@ fn prove_to_file(
         None => fresh_entropy().map_err(err)?,
     };
     let (start, end) = range.map_or((0, num_iters), |(a, b)| (a as usize, b as usize));
-    // Create the proof mode 0600 at open time (O_EXCL refuses to overwrite or
-    // follow a symlink; setting the mode on the OpenOptions avoids the brief
-    // world-readable window a create-then-chmod would leave).
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -176,17 +165,11 @@ fn prove_to_file(
     meta.set_item("binding", hex(&req.binding))?;
     meta.set_item("range", range)?;
     meta.set_item("entropy_mode", if range.is_some() { "deterministic" } else { "trng" })?;
-    // Only the commitment crosses the FFI for a secret-output statement; the raw
-    // output (which is key material there) never enters Python-managed memory.
     meta.set_item("output_is_secret", stmt.output_is_secret())?;
     meta.set_item("output", (!stmt.output_is_secret()).then(|| hex(&output)))?;
     meta.set_item("output_keccak256", hex(&keccak(&output)))?;
     meta.set_item("stream_bytes", written)?;
     meta.set_item("stream_keccak256", hex(&stream_keccak))?;
-    // The seed statements' circuits allocate one input per witness byte, so the shape
-    // has to reach the verifier or it rebuilds the canonical test-vector circuit and
-    // rejects the proof. Two lengths and nothing else: the salt's bytes are witness, so
-    // a BIP-39 passphrase never leaves the prover.
     meta.set_item(
         "witness_len",
         resolved.witness_shape.as_ref().map(|(n, _)| *n),
@@ -199,8 +182,8 @@ fn prove_to_file(
     Ok(meta.into())
 }
 
-/// Derive a statement's public output (no proof); returns `(output, chain_code)`
-/// as hex, `chain_code` being `None` for the non-child statements.
+/// Derives a statement's public output, with the parent chain code for a child
+/// statement.
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
 #[pyo3(signature = (statement, family, rounds, mnemonic, passphrase, path=None, index=None))]
@@ -233,7 +216,7 @@ fn derive_output(
     Ok((output, chain_code))
 }
 
-/// Verify a streamed proof against the expected public output.
+/// Verifies a streamed proof against the expected public output.
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
 #[pyo3(signature = (statement, family, output, stream, num_iters, binding, rounds, chain_code=None, index=None, witness_len=None, salt_len=None))]
@@ -267,7 +250,7 @@ fn verify(
     ))
 }
 
-/// Proof size and memory numbers for a statement (no witness).
+/// Reports the proof size and memory numbers for a statement.
 #[pyfunction]
 #[pyo3(signature = (statement, family, rounds))]
 fn profile(py: Python<'_>, statement: &str, family: &str, rounds: usize) -> PyResult<Py<PyDict>> {
@@ -283,8 +266,7 @@ fn profile(py: Python<'_>, statement: &str, family: &str, rounds: usize) -> PyRe
     Ok(d.into())
 }
 
-/// The off-device public output for a statement's canonical test vector, or
-/// `None`; used to verify the secp256k1 statements.
+/// The public output of a statement's canonical test vector.
 #[pyfunction]
 #[pyo3(signature = (statement, rounds=2048, family="bip32-secp256k1"))]
 fn expected_output(
@@ -299,13 +281,13 @@ fn expected_output(
         .map(|b| PyBytes::new(py, &b).unbind()))
 }
 
-/// Responses needed for `bits` bits of soundness (`n_eps`).
+/// The number of responses needed for a given number of bits of soundness.
 #[pyfunction]
 fn n_eps(bits: u32) -> usize {
     proofofseed_host::n_eps(bits)
 }
 
-/// Keccak-256 of `data` (the suite hash used by the proof sidecars).
+/// Keccak-256 of the given bytes.
 #[pyfunction]
 fn keccak256(py: Python<'_>, data: &[u8]) -> Py<PyBytes> {
     PyBytes::new(py, &keccak(data)).unbind()

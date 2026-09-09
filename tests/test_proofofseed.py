@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-"""Milestone-3 acceptance tests for the ``proofofseed`` Python package.
-
-Covers end-to-end round trips with the same refusals the CLI enforces, and the
-load-bearing property: a proof produced through the Python API is byte-identical
-to the CLI's for the same request (so the two interoperate and neither drifts
-from the shared library or the device)."""
+"""Acceptance tests for the ``proofofseed`` Python package."""
 
 from __future__ import annotations
 
@@ -20,8 +15,6 @@ MNEMONIC = (
     "abandon abandon abandon about"
 )
 
-# The CLI binary, if it has been built in the sibling repo — the byte-parity test
-# skips cleanly when it is absent.
 _CLI = (
     Path(__file__).resolve().parents[2]
     / "rust-app"
@@ -50,10 +43,8 @@ def test_full_proof_round_trips(tmp_path: Path) -> None:
     assert sidecar.num_iters == 2
     assert (tmp_path / "p.pos.json").exists()
     assert pos.verify(proof, expected_output=d.output, min_responses=2)
-    # A wrong expected output (mismatching the commitment) is refused.
     with pytest.raises(ValueError, match="commitment"):
         pos.verify(proof, expected_output=b"\x00" * 32, min_responses=2)
-    # The soundness floor refuses a proof carrying fewer than demanded.
     with pytest.raises(ValueError, match="at least"):
         pos.verify(proof, expected_output=d.output)
 
@@ -80,13 +71,11 @@ def test_ranged_partition_assembles_and_verifies(tmp_path: Path) -> None:
     b = tmp_path / "b.pos"
     pos.prove("hardened-child", out_path=a, range=(0, 3), **common)  # type: ignore[arg-type]
     pos.prove("hardened-child", out_path=b, range=(3, 6), **common)  # type: ignore[arg-type]
-    # A lone range is not a complete proof.
     with pytest.raises(ValueError, match="range, not a complete proof"):
         pos.verify(a, expected_output=d.output, min_responses=6)
     full = tmp_path / "full.pos"
     pos.assemble([a, b], out_path=full, expected_output=d.output, min_responses=6)
     assert pos.verify(full, expected_output=d.output, min_responses=6)
-    # A gap refuses assembly.
     c = tmp_path / "c.pos"
     pos.prove("hardened-child", out_path=c, range=(4, 6), **common)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="gap in coverage"):
@@ -121,8 +110,6 @@ def test_refuses_overwrite(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(not _CLI.exists(), reason="the proofofseed CLI is not built")
 def test_python_proof_is_byte_identical_to_the_cli(tmp_path: Path) -> None:
-    # The interop pin: a ranged (deterministic-entropy) proof from the Python API
-    # equals the CLI's for the identical request, byte for byte.
     seed = tmp_path / "mnemonic.txt"
     seed.write_text(MNEMONIC)
     py_proof = tmp_path / "py.pos"
@@ -170,49 +157,43 @@ def _cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _cli_prove_range(seed: Path, rng: str, out: Path) -> None:
+    _cli(
+        [
+            "prove",
+            "--statement",
+            "hardened-child",
+            "--path",
+            "m/84'/0'",
+            "--index",
+            "0'",
+            "--binding",
+            "aabbcc",
+            "-n",
+            "6",
+            "--range",
+            rng,
+            "--seed-file",
+            str(seed),
+            "-o",
+            str(out),
+        ]
+    )
+
+
 @pytest.mark.skipif(not _CLI.exists(), reason="the proofofseed CLI is not built")
 def test_cross_tool_assemble_both_directions(tmp_path: Path) -> None:
-    # The CLI produces two ranges, Python assembles and verifies them; then Python
-    # produces two ranges and the CLI assembles and verifies them. Exercises the
-    # shared sidecar format and the tool-agnostic assembly key in both directions.
     seed = tmp_path / "mnemonic.txt"
     seed.write_text(MNEMONIC)
     d = pos.derive("hardened-child", mnemonic=MNEMONIC, path="m/84'/0'", index="0'")
     out_hex = tmp_path / "out.hex"
     out_hex.write_text(d.output.hex())
-
-    def cli_prove(rng: str, out: Path) -> None:
-        _cli(
-            [
-                "prove",
-                "--statement",
-                "hardened-child",
-                "--path",
-                "m/84'/0'",
-                "--index",
-                "0'",
-                "--binding",
-                "aabbcc",
-                "-n",
-                "6",
-                "--range",
-                rng,
-                "--seed-file",
-                str(seed),
-                "-o",
-                str(out),
-            ]
-        )
-
-    # CLI ranges -> Python assemble + verify.
     ca, cb = tmp_path / "ca.pos", tmp_path / "cb.pos"
-    cli_prove("0..3", ca)
-    cli_prove("3..6", cb)
+    _cli_prove_range(seed, "0..3", ca)
+    _cli_prove_range(seed, "3..6", cb)
     full_py = tmp_path / "full_py.pos"
     pos.assemble([ca, cb], out_path=full_py, expected_output=d.output, min_responses=6)
     assert pos.verify(full_py, expected_output=d.output, min_responses=6)
-
-    # Python ranges -> CLI assemble + verify.
     pa, pb = tmp_path / "pa.pos", tmp_path / "pb.pos"
     common = dict(
         mnemonic=MNEMONIC,
@@ -251,14 +232,7 @@ def test_cross_tool_assemble_both_directions(tmp_path: Path) -> None:
 
 
 def test_seed_statements_carry_their_witness_shape_and_verify(tmp_path: Path) -> None:
-    """The seed statements allocate one circuit input per witness byte, so their
-    witness length — and, for BIP-39, the salt's length — are public parameters the
-    verifier needs to rebuild the circuit. A sidecar that omits them leaves the
-    verifier rebuilding the canonical test-vector circuit, which rejects every real
-    proof: that is what these statements used to do.
-
-    The salt's *bytes* are witness, so the sidecar carries a count and never the
-    passphrase."""
+    """A seed statement's sidecar carries its witness shape, and never the passphrase."""
     for statement, kwargs, want_salt_len in (
         ("master-key", {}, False),
         ("bip39-seed", {"rounds": 2}, True),
@@ -274,15 +248,13 @@ def test_seed_statements_carry_their_witness_shape_and_verify(tmp_path: Path) ->
         )
         assert sidecar.witness_len is not None and sidecar.witness_len > 0
         assert (sidecar.salt_len is not None) == want_salt_len
-        # The passphrase must not be recoverable from the sidecar at all.
         assert 'salt"' not in sidecar.to_json()
         secret = pos.derive(statement=statement, mnemonic=MNEMONIC, **kwargs)
         assert pos.verify(proof, expected_output=secret.output, min_responses=8)
 
 
 def test_a_seed_proof_does_not_verify_without_its_shape(tmp_path: Path) -> None:
-    """The negative that keeps the field from being dropped again: strip the shape
-    from the sidecar and the same proof must stop verifying."""
+    """A seed proof stops verifying once its witness shape is stripped from the sidecar."""
     proof = tmp_path / "mk.pos"
     pos.prove(
         statement="master-key",
@@ -293,7 +265,6 @@ def test_a_seed_proof_does_not_verify_without_its_shape(tmp_path: Path) -> None:
     )
     secret = pos.derive(statement="master-key", mnemonic=MNEMONIC)
     assert pos.verify(proof, expected_output=secret.output, min_responses=8)
-
     sidecar_path = proof.with_name(proof.name + ".json")
     record = sidecar_path.read_text().replace(
         '"witness_len": 64', '"witness_len": null'
