@@ -7,7 +7,7 @@ name = "proofofseed"
 version = "0.1.0"
 description = "Create and verify zero-knowledge proofs of seed for software wallets."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "LGPL-3.0-or-later" }
 authors = [{ name = "Stefano Gogioso" }]
 classifiers = [

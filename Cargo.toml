@@ -12,10 +12,9 @@ crate-type = ["cdylib"]
 [dependencies]
 proofofseed-circuits = { version = "0.1.0" }
 proofofseed-host = { version = "0.1.0" }
-# Keccak-256 (the suite hash) for the sidecar digests, so Python needs no
-# separate Keccak implementation.
+# Keccak-256 for the sidecar digests.
 zkboo = { version = "1.2.0", default-features = false, features = ["u32", "u64"] }
-pyo3 = { version = "0.26", features = ["extension-module", "abi3-py39"] }
+pyo3 = { version = "0.26", features = ["extension-module", "abi3-py310"] }
 
 [patch.crates-io]
 zkboo = { path = "../../zkboo/zkboo" }
