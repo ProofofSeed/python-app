@@ -103,8 +103,9 @@ def derive(
     path: str | list[int] | None = None,
     index: str | int | None = None,
     rounds: int = 2048,
+    reveal: bool = False,
 ) -> DeriveResult:
-    """Derives a statement's public output from the mnemonic, for the verifier to pin."""
+    """Derives a statement's output from the mnemonic, for the verifier to pin."""
     comps = parse_path(path) if isinstance(path, str) else path
     idx = parse_component(index) if isinstance(index, str) else index
     output_hex, chain_code_hex = _rust.derive_output(
@@ -115,6 +116,7 @@ def derive(
         _as_bytes(passphrase),
         comps,
         idx,
+        reveal,
     )
     return DeriveResult(
         output=bytes.fromhex(output_hex),
@@ -308,6 +310,8 @@ def assemble(
         reference.rounds,
         bytes.fromhex(reference.chain_code) if reference.chain_code else None,
         parse_component(reference.index) if reference.index else None,
+        reference.witness_len,
+        reference.salt_len,
     )
     if not ok:
         raise ValueError("the assembled proof does not verify — nothing written")
@@ -329,6 +333,8 @@ def assemble(
         output_keccak256=reference.output_keccak256,
         stream_bytes=len(assembled),
         stream_keccak256=_rust.keccak256(bytes(assembled)).hex(),
+        witness_len=reference.witness_len,
+        salt_len=reference.salt_len,
         versions=reference.versions,
     )
     sidecar.write(out)

@@ -182,11 +182,11 @@ fn prove_to_file(
     Ok(meta.into())
 }
 
-/// Derives a statement's public output, with the parent chain code for a child
-/// statement.
+/// Derives a statement's output, with the parent chain code for a child statement,
+/// refusing a secret output unless `reveal` is set.
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-#[pyo3(signature = (statement, family, rounds, mnemonic, passphrase, path=None, index=None))]
+#[pyo3(signature = (statement, family, rounds, mnemonic, passphrase, path=None, index=None, reveal=false))]
 fn derive_output(
     statement: &str,
     family: &str,
@@ -195,6 +195,7 @@ fn derive_output(
     passphrase: &[u8],
     path: Option<Vec<u32>>,
     index: Option<u32>,
+    reveal: bool,
 ) -> PyResult<(String, Option<String>)> {
     let stmt = statement_of(statement)?;
     let fam = family_of(family)?;
@@ -211,7 +212,16 @@ fn derive_output(
         passphrase,
     })
     .map_err(err)?;
-    let output = hex(&resolved.circuit.output());
+    let output = resolved.circuit.output();
+    if stmt.output_is_secret() && !reveal {
+        return Err(err(format!(
+            "the {} output is secret key material; pass reveal=True to return it \
+             (commitment: {})",
+            stmt.name(),
+            hex(&keccak(&output))
+        )));
+    }
+    let output = hex(&output);
     let chain_code = resolved.request.chain_code.map(|cc| hex(&cc));
     Ok((output, chain_code))
 }

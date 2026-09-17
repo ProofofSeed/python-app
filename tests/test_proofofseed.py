@@ -59,7 +59,9 @@ def test_secret_output_statement_needs_the_output_supplied(tmp_path: Path) -> No
 
 
 def test_ranged_partition_assembles_and_verifies(tmp_path: Path) -> None:
-    d = pos.derive("hardened-child", mnemonic=MNEMONIC, path="m/84'/0'", index="0'")
+    d = pos.derive(
+        "hardened-child", mnemonic=MNEMONIC, path="m/84'/0'", index="0'", reveal=True
+    )
     common = dict(
         mnemonic=MNEMONIC,
         path="m/84'/0'",
@@ -185,7 +187,9 @@ def _cli_prove_range(seed: Path, rng: str, out: Path) -> None:
 def test_cross_tool_assemble_both_directions(tmp_path: Path) -> None:
     seed = tmp_path / "mnemonic.txt"
     seed.write_text(MNEMONIC)
-    d = pos.derive("hardened-child", mnemonic=MNEMONIC, path="m/84'/0'", index="0'")
+    d = pos.derive(
+        "hardened-child", mnemonic=MNEMONIC, path="m/84'/0'", index="0'", reveal=True
+    )
     out_hex = tmp_path / "out.hex"
     out_hex.write_text(d.output.hex())
     ca, cb = tmp_path / "ca.pos", tmp_path / "cb.pos"
@@ -249,7 +253,9 @@ def test_seed_statements_carry_their_witness_shape_and_verify(tmp_path: Path) ->
         assert sidecar.witness_len is not None and sidecar.witness_len > 0
         assert (sidecar.salt_len is not None) == want_salt_len
         assert 'salt"' not in sidecar.to_json()
-        secret = pos.derive(statement=statement, mnemonic=MNEMONIC, **kwargs)
+        secret = pos.derive(
+            statement=statement, mnemonic=MNEMONIC, reveal=True, **kwargs
+        )
         assert pos.verify(proof, expected_output=secret.output, min_responses=8)
 
 
@@ -263,7 +269,7 @@ def test_a_seed_proof_does_not_verify_without_its_shape(tmp_path: Path) -> None:
         out_path=proof,
         binding=b"\xaa\xbb",
     )
-    secret = pos.derive(statement="master-key", mnemonic=MNEMONIC)
+    secret = pos.derive(statement="master-key", mnemonic=MNEMONIC, reveal=True)
     assert pos.verify(proof, expected_output=secret.output, min_responses=8)
     sidecar_path = proof.with_name(proof.name + ".json")
     record = sidecar_path.read_text().replace(
@@ -271,3 +277,46 @@ def test_a_seed_proof_does_not_verify_without_its_shape(tmp_path: Path) -> None:
     )
     sidecar_path.write_text(record)
     assert not pos.verify(proof, expected_output=secret.output, min_responses=8)
+
+
+def test_ranged_seed_statements_assemble_under_their_witness_shape(
+    tmp_path: Path,
+) -> None:
+    """A ranged seed proof assembles, verifies and keeps its shape in the sidecar."""
+    for statement, rounds in (("master-key", 2048), ("bip39-seed", 2)):
+        secret = pos.derive(
+            statement, mnemonic=MNEMONIC, rounds=rounds, reveal=True
+        ).output
+        parts = []
+        for start, end in ((0, 2), (2, 4)):
+            part = tmp_path / f"{statement}-{start}-{end}.pos"
+            pos.prove(
+                statement,
+                mnemonic=MNEMONIC,
+                rounds=rounds,
+                responses=4,
+                range=(start, end),
+                out_path=part,
+            )
+            parts.append(part)
+        full = tmp_path / f"{statement}.pos"
+        assembled = pos.assemble(
+            parts, out_path=full, expected_output=secret, min_responses=4
+        )
+        assert assembled.witness_len == pos.Sidecar.read(parts[0]).witness_len
+        assert assembled.salt_len == pos.Sidecar.read(parts[0]).salt_len
+        assert pos.verify(full, expected_output=secret, min_responses=4)
+
+
+def test_derive_guards_secret_outputs() -> None:
+    """A secret output is returned only on request, and a public one always."""
+    with pytest.raises(ValueError, match="secret key material"):
+        pos.derive("hardened-child", mnemonic=MNEMONIC, path="m/84'/0'", index="0'")
+    with pytest.raises(ValueError, match="secret key material"):
+        pos.derive("master-key", mnemonic=MNEMONIC)
+    revealed = pos.derive(
+        "hardened-child", mnemonic=MNEMONIC, path="m/84'/0'", index="0'", reveal=True
+    )
+    assert len(revealed.output) > 0
+    public = pos.derive("public-key", mnemonic=MNEMONIC, path="m/44'/60'/0'/0/0")
+    assert len(public.output) > 0

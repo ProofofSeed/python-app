@@ -19,11 +19,14 @@ sidecar = pos.prove(
 assert pos.verify("proof.pos", min_responses=pos.DEFAULT_RESPONSES)
 
 # Resumable or parallel ranges of one proof, then assembly.
+# The hardened child's output is a private key, so deriving it takes reveal=True.
+child = pos.derive("hardened-child", mnemonic=phrase, path="m/84'/0'", index="0'",
+                   reveal=True)
 pos.prove("hardened-child", mnemonic=phrase, path="m/84'/0'", index="0'",
           responses=438, range=(0, 219), out_path="a.pos", binding=tx_hash)
 pos.prove("hardened-child", mnemonic=phrase, path="m/84'/0'", index="0'",
           responses=438, range=(219, 438), out_path="b.pos", binding=tx_hash)
-pos.assemble(["a.pos", "b.pos"], out_path="full.pos", expected_output=d.output)
+pos.assemble(["a.pos", "b.pos"], out_path="full.pos", expected_output=child.output)
 ```
 
 `profile(statement)` reports size and memory numbers without a witness.
@@ -36,11 +39,14 @@ The package takes the raw mnemonic into process memory, which is a higher-stakes
 It never reads the mnemonic from the command line or the environment.
 Proof files and sidecars are created mode 0600, and a sidecar carries the parent chain code for child statements.
 Ranged proofs must be produced with one build across all runs.
+`derive` returns a statement's secret output only when called with `reveal=True`.
 The full posture is in [`knowledge/security.md`](knowledge/security.md).
 
 ## Building
 
 The `proofofseed-core` and `zkboo` crates are resolved by path until they are published.
+`build.rs` refuses to build if the lockfile resolves any of them from a registry, which is what a `[patch.crates-io]` table does silently once a local version stops satisfying its requirement.
+`rust-toolchain.toml` pins the compiler to Rust 1.95.0.
 With [uv](https://docs.astral.sh/uv/):
 
 ```sh
