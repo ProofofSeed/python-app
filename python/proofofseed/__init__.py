@@ -310,6 +310,8 @@ def assemble(
         reference.rounds,
         bytes.fromhex(reference.chain_code) if reference.chain_code else None,
         parse_component(reference.index) if reference.index else None,
+        reference.witness_len,
+        reference.salt_len,
     )
     if not ok:
         raise ValueError("the assembled proof does not verify — nothing written")
@@ -331,6 +333,8 @@ def assemble(
         output_keccak256=reference.output_keccak256,
         stream_bytes=len(assembled),
         stream_keccak256=_rust.keccak256(bytes(assembled)).hex(),
+        witness_len=reference.witness_len,
+        salt_len=reference.salt_len,
         versions=reference.versions,
     )
     sidecar.write(out)

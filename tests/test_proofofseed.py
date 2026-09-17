@@ -279,6 +279,35 @@ def test_a_seed_proof_does_not_verify_without_its_shape(tmp_path: Path) -> None:
     assert not pos.verify(proof, expected_output=secret.output, min_responses=8)
 
 
+def test_ranged_seed_statements_assemble_under_their_witness_shape(
+    tmp_path: Path,
+) -> None:
+    """A ranged seed proof assembles, verifies and keeps its shape in the sidecar."""
+    for statement, rounds in (("master-key", 2048), ("bip39-seed", 2)):
+        secret = pos.derive(
+            statement, mnemonic=MNEMONIC, rounds=rounds, reveal=True
+        ).output
+        parts = []
+        for start, end in ((0, 2), (2, 4)):
+            part = tmp_path / f"{statement}-{start}-{end}.pos"
+            pos.prove(
+                statement,
+                mnemonic=MNEMONIC,
+                rounds=rounds,
+                responses=4,
+                range=(start, end),
+                out_path=part,
+            )
+            parts.append(part)
+        full = tmp_path / f"{statement}.pos"
+        assembled = pos.assemble(
+            parts, out_path=full, expected_output=secret, min_responses=4
+        )
+        assert assembled.witness_len == pos.Sidecar.read(parts[0]).witness_len
+        assert assembled.salt_len == pos.Sidecar.read(parts[0]).salt_len
+        assert pos.verify(full, expected_output=secret, min_responses=4)
+
+
 def test_derive_guards_secret_outputs() -> None:
     """A secret output is returned only on request, and a public one always."""
     with pytest.raises(ValueError, match="secret key material"):
