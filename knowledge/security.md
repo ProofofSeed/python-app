@@ -12,7 +12,8 @@ No guarantee is made about swap or core dumps, because none is implemented.
 
 Secrets stay on the Rust side of the binding.
 The mnemonic and passphrase cross the FFI as bytes, are consumed by the derivation, and the derived key material is zeroized by `proofofseed-host`.
-For a statement whose output is itself key material, only the Keccak-256 commitment crosses back, so the raw output never enters Python-managed memory.
+For a statement whose output is itself key material, `prove` returns only the Keccak-256 commitment, so the raw output never enters Python-managed memory.
+`derive` refuses such a statement unless called with `reveal=True`, which is the one path that hands key material to Python; the refusal names the commitment instead.
 
 ## File creation
 

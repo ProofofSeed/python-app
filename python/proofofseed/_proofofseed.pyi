@@ -30,6 +30,7 @@ def derive_output(
     passphrase: bytes,
     path: list[int] | None = ...,
     index: int | None = ...,
+    reveal: bool = ...,
 ) -> tuple[str, str | None]: ...
 def verify(
     statement: str,
