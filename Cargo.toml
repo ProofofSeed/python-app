@@ -29,3 +29,9 @@ zkboo-profiling = { path = "../../zkboo/zkboo-profiling" }
 zkboo-circuit-hash = { path = "../../zkboo/zkboo-circuit-hash" }
 proofofseed-circuits = { path = "../proofofseed-core/circuits" }
 proofofseed-host = { path = "../proofofseed-core/host" }
+
+# Stripping the release extension leaves its LINKEDIT string pool mis-aligned, and macOS
+# then refuses to load the module at all ("mis-aligned LINKEDIT string pool"), which the
+# unstripped debug build does not do. Keeping the symbols costs size and nothing else.
+[profile.release]
+strip = "none"
