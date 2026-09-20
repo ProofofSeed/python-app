@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 proofofseed-circuits = { version = "0.1.0" }
 proofofseed-host = { version = "0.1.0" }
 # Keccak-256 for the sidecar digests.
-zkboo = { version = "1.2.0", default-features = false, features = ["u32", "u64"] }
+zkboo = { version = "1.3.0", default-features = false, features = ["u32", "u64"] }
 pyo3 = { version = "0.26", features = ["extension-module", "abi3-py310"] }
 
 [patch.crates-io]
