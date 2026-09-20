@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 proofofseed-circuits = { version = "0.1.0" }
 proofofseed-host = { version = "0.1.0" }
 # Keccak-256 for the sidecar digests.
-zkboo = { version = "1.2.0", default-features = false, features = ["u32", "u64"] }
+zkboo = { version = "1.3.0", default-features = false, features = ["u32", "u64"] }
 pyo3 = { version = "0.26", features = ["extension-module", "abi3-py310"] }
 
 [patch.crates-io]
@@ -29,3 +29,9 @@ zkboo-profiling = { path = "../../zkboo/zkboo-profiling" }
 zkboo-circuit-hash = { path = "../../zkboo/zkboo-circuit-hash" }
 proofofseed-circuits = { path = "../proofofseed-core/circuits" }
 proofofseed-host = { path = "../proofofseed-core/host" }
+
+# Stripping the release extension leaves its LINKEDIT string pool mis-aligned, and macOS
+# then refuses to load the module at all ("mis-aligned LINKEDIT string pool"), which the
+# unstripped debug build does not do. Keeping the symbols costs size and nothing else.
+[profile.release]
+strip = "none"
