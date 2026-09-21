@@ -23,9 +23,9 @@ assert pos.verify("proof.pos", min_responses=pos.DEFAULT_RESPONSES)
 child = pos.derive("hardened-child", mnemonic=phrase, path="m/84'/0'", index="0'",
                    reveal=True)
 pos.prove("hardened-child", mnemonic=phrase, path="m/84'/0'", index="0'",
-          responses=438, range=(0, 219), out_path="a.pos", binding=tx_hash)
+          responses=438, range=(0, 200), out_path="a.pos", binding=tx_hash)
 pos.prove("hardened-child", mnemonic=phrase, path="m/84'/0'", index="0'",
-          responses=438, range=(219, 438), out_path="b.pos", binding=tx_hash)
+          responses=438, range=(200, 438), out_path="b.pos", binding=tx_hash)
 pos.assemble(["a.pos", "b.pos"], out_path="full.pos", expected_output=child.output)
 ```
 
