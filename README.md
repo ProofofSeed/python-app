@@ -70,3 +70,8 @@ uv venv --python 3.13 && uv pip install maturin mypy black pytest
 - `knowledge/` — design records.
 
 Licensed LGPL-3.0-or-later; every source file carries an SPDX header.
+
+## Licence
+
+Copyright © 2026 Stefano Gogioso.
+The code is LGPL-3.0-or-later (see `LICENSE`); vendored third-party code keeps its own licence.
