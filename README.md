@@ -3,6 +3,13 @@
 Creates and verifies zero-knowledge proofs of seed for software wallets: ZKBoo proofs that a BIP-39/BIP-32/SLIP-10-derived key was derived from a held seed, bound to a verifier-chosen context.
 The package is a typed, `mypy --strict` wrapper built with [Maturin](https://www.maturin.rs/)/PyO3 over the shared `proofofseed-host` Rust library, the same library the `proofofseed` CLI and the ProofofSeed Ledger app use, so its proofs are byte-identical to the CLI's and — for the derived-key statements — to a device holding the same seed.
 
+## Status
+
+A research prototype: it has not been audited and is not for production use.
+The 438-response default gives a soundness error of `(2/3)^438 <= 2^-256` only under the Fiat-Shamir transform and the security of the Keccak-256 hash, assumptions that have not been independently reviewed.
+It holds a raw seed in host memory, with no guarantee against swap or core dumps.
+The `zkboo` crates and `proofofseed-core` are not yet published, so it cannot be built from a clean checkout until they are; see Building.
+
 ## Usage
 
 ```python

@@ -10,6 +10,7 @@ from pathlib import Path
 import proofofseed as pos
 import pytest
 
+# Public BIP-39 reference mnemonic (BIP-39 test vectors), not a wallet seed.
 MNEMONIC = (
     "abandon abandon abandon abandon abandon abandon abandon abandon "
     "abandon abandon abandon about"
